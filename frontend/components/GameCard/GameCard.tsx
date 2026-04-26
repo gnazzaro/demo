@@ -13,7 +13,7 @@ export function GameCard({ params }: Prop) {
   const game = params.game;
 
   return (
-    <Card className="relative w-[200px] h-[300px] overflow-hidden p-0 border-zinc-800 bg-zinc-900 cursor-pointer group">
+    <Card className="relative w-full aspect-[2/3] overflow-hidden p-0 border-zinc-800 bg-zinc-900 cursor-pointer group">
       {/* Cover a tutto schermo */}
       <div className="relative w-full h-full">
         <Image
