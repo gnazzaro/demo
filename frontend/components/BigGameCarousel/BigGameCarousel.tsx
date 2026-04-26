@@ -58,96 +58,97 @@ export function BigGameCarousel({ params }: Props) {
   if (params.games?.length === 0) return <p>Nessun Gioco disponibile.</p>;
 
   return (
-    <div className="w-full max-w-6xl mx-auto group">
-      {/*
-        px-12 on Carousel gives horizontal room for the absolutely-positioned
-        prev/next buttons. The inner div clips + rounds only the slide area,
-        so overflow-hidden never touches the flex container that embla moves.
-      */}
-      <Carousel className="w-full px-12">
-        <div className="rounded-xl overflow-hidden shadow-lg">
+    <div className="w-full max-w-6xl mx-auto px-12 group">
+      <Carousel className="w-full">
+        {/*
+          overflow-hidden va qui, su un div normale, NON su CarouselContent.
+          CarouselContent è il flex container che embla trasla orizzontalmente:
+          se ha overflow-hidden, i slide fuori viewport vengono clippati
+          durante la transizione e risultano invisibili.
+        */}
+        <div className="overflow-hidden rounded-xl shadow-lg">
           <CarouselContent className="ml-0">
             {params.games
               ?.filter((game): game is Game => !!game)
               .map((game: Game) => (
-                <CarouselItem key={game.id} className="pl-0">
-                <Card className="border-none rounded-none bg-zinc-950 text-white">
-                  <CardContent
-                    className="flex p-0"
-                    style={{ height: "460px" }}
+                <CarouselItem key={game.id} className="p-4">
+                  <Card
+                    className="p-0 overflow-hidden"
+                    style={{ width: "90%", margin: "auto" }}
                   >
-                    {/* Left 3/4 — YouTube video filling full height */}
-                    <div className="w-3/4 h-full flex-shrink-0 bg-black">
-                      <iframe
-                        src={getYouTubeEmbedUrl(game.video, origin)}
-                        title={`Trailer di ${game.title}`}
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        className="w-full h-full"
-                        style={{ border: "none", display: "block" }}
-                      />
-                    </div>
-
-                    {/* Right 1/4 — details panel */}
-                    <div className="w-1/4 flex flex-col bg-zinc-900 border-l border-zinc-800 overflow-hidden">
-                      {/* Thumbnail */}
-                      <div className="relative w-full aspect-video flex-shrink-0">
-                        <Image
-                          src={game.images[0]?.image || game.cover}
-                          alt="Miniatura galleria"
-                          fill
-                          className="object-cover"
+                    <CardContent className="flex p-0" style={{ height: "460px" }}>
+                      {/* Left 3/4 — YouTube video */}
+                      <div className="w-3/4 h-full flex-shrink-0 bg-black">
+                        <iframe
+                          src={getYouTubeEmbedUrl(game.video, origin)}
+                          title={`Trailer di ${game.title}`}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          className="w-full h-full"
+                          style={{ border: "none", display: "block" }}
                         />
                       </div>
 
-                      {/* Testo sotto la thumbnail */}
-                      <div className="flex flex-col flex-1 justify-between p-4 overflow-hidden">
-                        <div className="space-y-2 overflow-hidden">
-                          <h3 className="text-lg font-bold leading-snug line-clamp-2">
-                            {game.title}
-                          </h3>
+                      {/* Right 1/4 — details panel */}
+                      <div className="w-1/4 flex flex-col bg-zinc-900 border-l border-zinc-800 overflow-hidden">
+                        {/* Thumbnail */}
+                        <div className="relative w-full aspect-video flex-shrink-0">
+                          <Image
+                            src={game.images[0]?.image || game.cover}
+                            alt="Miniatura galleria"
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
 
-                          <div className="flex flex-wrap gap-1">
-                            {game.tag_list.slice(0, 3).map((tag) => (
-                              <span
-                                key={tag.name}
-                                className="text-[10px] uppercase bg-zinc-800 px-2 py-0.5 rounded tracking-wide"
-                              >
-                                {tag.name}
-                              </span>
-                            ))}
+                        {/* Testo sotto la thumbnail */}
+                        <div className="flex flex-col flex-1 justify-between p-4 overflow-hidden">
+                          <div className="space-y-2 overflow-hidden">
+                            <h3 className="text-lg font-bold leading-snug line-clamp-2">
+                              {game.title}
+                            </h3>
+
+                            <div className="flex flex-wrap gap-1">
+                              {game.tag_list.slice(0, 3).map((tag) => (
+                                <span
+                                  key={tag.name}
+                                  className="text-[10px] uppercase bg-zinc-800 px-2 py-0.5 rounded tracking-wide"
+                                >
+                                  {tag.name}
+                                </span>
+                              ))}
+                            </div>
+
+                            <p className="text-sm text-zinc-400 line-clamp-4 leading-relaxed">
+                              {game.description}
+                            </p>
                           </div>
 
-                          <p className="text-sm text-zinc-400 line-clamp-4 leading-relaxed">
-                            {game.description}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-col gap-1 pt-3 border-t border-zinc-800">
-                          <span className="text-xs text-zinc-500">
-                            Rilascio:{" "}
-                            {new Date(game.release_date).toLocaleDateString(
-                              "it-IT"
-                            )}
-                          </span>
-                          <span className="text-2xl font-bold text-green-400">
-                            {game.price === 0
-                              ? "Gratis"
-                              : `${game.price.toFixed(2)} €`}
-                          </span>
+                          <div className="flex flex-col gap-1 pt-3 border-t border-zinc-800">
+                            <span className="text-xs text-zinc-500">
+                              Rilascio:{" "}
+                              {new Date(game.release_date).toLocaleDateString(
+                                "it-IT"
+                              )}
+                            </span>
+                            <span className="text-2xl font-bold text-green-400">
+                              {game.price === 0
+                                ? "Gratis"
+                                : `${game.price.toFixed(2)} €`}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </CarouselItem>
-            ))}
+                    </CardContent>
+                  </Card>
+                </CarouselItem>
+              ))}
           </CarouselContent>
         </div>
 
         {/* Bottoni fuori dalla card, centrati verticalmente */}
-        <CarouselPrevious className="left-0 opacity-70 hover:opacity-100 transition-opacity" />
-        <CarouselNext className="right-0 opacity-70 hover:opacity-100 transition-opacity" />
+        <CarouselPrevious className="left-0 -translate-x-full opacity-70 hover:opacity-100 transition-opacity" />
+        <CarouselNext className="right-0 translate-x-full opacity-70 hover:opacity-100 transition-opacity" />
       </Carousel>
     </div>
   );
