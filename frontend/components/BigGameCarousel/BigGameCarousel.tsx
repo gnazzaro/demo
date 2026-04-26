@@ -71,11 +71,8 @@ export function BigGameCarousel({ params }: Props) {
             {params.games
               ?.filter((game): game is Game => !!game)
               .map((game: Game) => (
-                <CarouselItem key={game.id} className="p-4">
-                  <Card
-                    className="p-0 overflow-hidden"
-                    style={{ width: "90%", margin: "auto" }}
-                  >
+                <CarouselItem key={game.id} className="pl-0">
+                  <Card className="p-0 overflow-hidden border-none rounded-none">
                     <CardContent className="flex p-0" style={{ height: "460px" }}>
                       {/* Left 3/4 — YouTube video */}
                       <div className="w-3/4 h-full flex-shrink-0 bg-black">
