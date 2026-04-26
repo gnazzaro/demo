@@ -58,14 +58,19 @@ export function BigGameCarousel({ params }: Props) {
   if (params.games?.length === 0) return <p>Nessun Gioco disponibile.</p>;
 
   return (
-    /* Wrapper con padding orizzontale per far stare i bottoni fuori dalla card */
-    <div className="w-full max-w-6xl mx-auto px-12 group">
-      <Carousel className="w-full">
-        <CarouselContent className="ml-0 rounded-xl overflow-hidden shadow-lg">
-          {params.games
-            ?.filter((game): game is Game => !!game)
-            .map((game: Game) => (
-              <CarouselItem key={game.id} className="pl-0">
+    <div className="w-full max-w-6xl mx-auto group">
+      {/*
+        px-12 on Carousel gives horizontal room for the absolutely-positioned
+        prev/next buttons. The inner div clips + rounds only the slide area,
+        so overflow-hidden never touches the flex container that embla moves.
+      */}
+      <Carousel className="w-full px-12">
+        <div className="rounded-xl overflow-hidden shadow-lg">
+          <CarouselContent className="ml-0">
+            {params.games
+              ?.filter((game): game is Game => !!game)
+              .map((game: Game) => (
+                <CarouselItem key={game.id} className="pl-0">
                 <Card className="border-none rounded-none bg-zinc-950 text-white">
                   <CardContent
                     className="flex p-0"
@@ -137,11 +142,12 @@ export function BigGameCarousel({ params }: Props) {
                 </Card>
               </CarouselItem>
             ))}
-        </CarouselContent>
+          </CarouselContent>
+        </div>
 
         {/* Bottoni fuori dalla card, centrati verticalmente */}
-        <CarouselPrevious className="left-0 -translate-x-full opacity-70 hover:opacity-100 transition-opacity" />
-        <CarouselNext className="right-0 translate-x-full opacity-70 hover:opacity-100 transition-opacity" />
+        <CarouselPrevious className="left-0 opacity-70 hover:opacity-100 transition-opacity" />
+        <CarouselNext className="right-0 opacity-70 hover:opacity-100 transition-opacity" />
       </Carousel>
     </div>
   );
