@@ -19,7 +19,7 @@ interface Props {
   };
 }
 
-function getYouTubeEmbedUrl(url: string): string {
+function getYouTubeEmbedUrl(url: string, origin: string): string {
   try {
     const parsed = new URL(url);
     let videoId = "";
@@ -28,13 +28,24 @@ function getYouTubeEmbedUrl(url: string): string {
     } else {
       videoId = parsed.searchParams.get("v") ?? "";
     }
-    return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
+    const params = new URLSearchParams({
+      rel: "0",
+      modestbranding: "1",
+      ...(origin ? { origin } : {}),
+    });
+    return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
   } catch {
     return url;
   }
 }
 
 export function BigGameCarousel({ params }: Props) {
+  const [origin, setOrigin] = React.useState("");
+
+  React.useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
   if (params.isLoading) return <Spinner />;
   if (params.error)
     return (
@@ -45,84 +56,91 @@ export function BigGameCarousel({ params }: Props) {
   if (params.games?.length === 0) return <p>Nessun Gioco disponibile.</p>;
 
   return (
-    <Carousel className="w-full max-w-6xl mx-auto overflow-hidden rounded-xl shadow-lg group">
-      <CarouselContent>
-        {params.games
-          ?.filter((game): game is Game => !!game)
-          .map((game: Game) => (
-            <CarouselItem key={game.id}>
-              <Card className="border-none rounded-none bg-zinc-950 text-white">
-                <CardContent className="flex p-0" style={{ height: "460px" }}>
-                  {/* Left 3/4 — YouTube video filling full height */}
-                  <div className="w-3/4 h-full flex-shrink-0 bg-black">
-                    <iframe
-                      src={getYouTubeEmbedUrl(game.video)}
-                      title={`Trailer di ${game.title}`}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      className="w-full h-full"
-                      style={{ border: "none", display: "block" }}
-                    />
-                  </div>
-
-                  {/* Right 1/4 — details panel */}
-                  <div className="w-1/4 flex flex-col bg-zinc-900 border-l border-zinc-800 overflow-hidden">
-                    {/* Thumbnail centrata nel pannello */}
-                    <div className="relative w-full aspect-video flex-shrink-0">
-                      <Image
-                        src={game.images[0]?.image || game.cover}
-                        alt="Miniatura galleria"
-                        fill
-                        className="object-cover"
+    /* Wrapper con padding orizzontale per far stare i bottoni fuori dalla card */
+    <div className="w-full max-w-6xl mx-auto px-12 group">
+      <Carousel className="w-full">
+        <CarouselContent className="ml-0 rounded-xl overflow-hidden shadow-lg">
+          {params.games
+            ?.filter((game): game is Game => !!game)
+            .map((game: Game) => (
+              <CarouselItem key={game.id} className="pl-0">
+                <Card className="border-none rounded-none bg-zinc-950 text-white">
+                  <CardContent
+                    className="flex p-0"
+                    style={{ height: "460px" }}
+                  >
+                    {/* Left 3/4 — YouTube video filling full height */}
+                    <div className="w-3/4 h-full flex-shrink-0 bg-black">
+                      <iframe
+                        src={getYouTubeEmbedUrl(game.video, origin)}
+                        title={`Trailer di ${game.title}`}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        className="w-full h-full"
+                        style={{ border: "none", display: "block" }}
                       />
                     </div>
 
-                    {/* Testo sotto la thumbnail */}
-                    <div className="flex flex-col flex-1 justify-between p-4 overflow-hidden">
-                      <div className="space-y-2 overflow-hidden">
-                        <h3 className="text-lg font-bold leading-snug line-clamp-2">
-                          {game.title}
-                        </h3>
+                    {/* Right 1/4 — details panel */}
+                    <div className="w-1/4 flex flex-col bg-zinc-900 border-l border-zinc-800 overflow-hidden">
+                      {/* Thumbnail */}
+                      <div className="relative w-full aspect-video flex-shrink-0">
+                        <Image
+                          src={game.images[0]?.image || game.cover}
+                          alt="Miniatura galleria"
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
 
-                        <div className="flex flex-wrap gap-1">
-                          {game.tag_list.slice(0, 3).map((tag) => (
-                            <span
-                              key={tag.name}
-                              className="text-[10px] uppercase bg-zinc-800 px-2 py-0.5 rounded tracking-wide"
-                            >
-                              {tag.name}
-                            </span>
-                          ))}
+                      {/* Testo sotto la thumbnail */}
+                      <div className="flex flex-col flex-1 justify-between p-4 overflow-hidden">
+                        <div className="space-y-2 overflow-hidden">
+                          <h3 className="text-lg font-bold leading-snug line-clamp-2">
+                            {game.title}
+                          </h3>
+
+                          <div className="flex flex-wrap gap-1">
+                            {game.tag_list.slice(0, 3).map((tag) => (
+                              <span
+                                key={tag.name}
+                                className="text-[10px] uppercase bg-zinc-800 px-2 py-0.5 rounded tracking-wide"
+                              >
+                                {tag.name}
+                              </span>
+                            ))}
+                          </div>
+
+                          <p className="text-sm text-zinc-400 line-clamp-4 leading-relaxed">
+                            {game.description}
+                          </p>
                         </div>
 
-                        <p className="text-sm text-zinc-400 line-clamp-4 leading-relaxed">
-                          {game.description}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-col gap-1 pt-3 border-t border-zinc-800">
-                        <span className="text-xs text-zinc-500">
-                          Rilascio:{" "}
-                          {new Date(game.release_date).toLocaleDateString(
-                            "it-IT"
-                          )}
-                        </span>
-                        <span className="text-2xl font-bold text-green-400">
-                          {game.price === 0
-                            ? "Gratis"
-                            : `${game.price.toFixed(2)} €`}
-                        </span>
+                        <div className="flex flex-col gap-1 pt-3 border-t border-zinc-800">
+                          <span className="text-xs text-zinc-500">
+                            Rilascio:{" "}
+                            {new Date(game.release_date).toLocaleDateString(
+                              "it-IT"
+                            )}
+                          </span>
+                          <span className="text-2xl font-bold text-green-400">
+                            {game.price === 0
+                              ? "Gratis"
+                              : `${game.price.toFixed(2)} €`}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </CarouselItem>
-          ))}
-      </CarouselContent>
+                  </CardContent>
+                </Card>
+              </CarouselItem>
+            ))}
+        </CarouselContent>
 
-      <CarouselPrevious className="left-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-      <CarouselNext className="right-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-    </Carousel>
+        {/* Bottoni fuori dalla card, centrati verticalmente */}
+        <CarouselPrevious className="left-0 -translate-x-full opacity-70 hover:opacity-100 transition-opacity" />
+        <CarouselNext className="right-0 translate-x-full opacity-70 hover:opacity-100 transition-opacity" />
+      </Carousel>
+    </div>
   );
 }
