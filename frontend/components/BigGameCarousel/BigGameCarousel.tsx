@@ -19,6 +19,21 @@ interface Props {
   };
 }
 
+function getYouTubeEmbedUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    let videoId = "";
+    if (parsed.hostname.includes("youtu.be")) {
+      videoId = parsed.pathname.slice(1);
+    } else {
+      videoId = parsed.searchParams.get("v") ?? "";
+    }
+    return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
+  } catch {
+    return url;
+  }
+}
+
 export function BigGameCarousel({ params }: Props) {
   if (params.isLoading) return <Spinner />;
   if (params.error)
@@ -37,24 +52,23 @@ export function BigGameCarousel({ params }: Props) {
           .map((game: Game) => (
             <CarouselItem key={game.id}>
               <Card className="border-none rounded-none bg-zinc-950 text-white">
-                <CardContent className="flex p-0" style={{ height: "420px" }}>
-                  {/* Left 3/4 — main cover image */}
-                  <div className="relative w-3/4 h-full flex-shrink-0">
-                    <Image
-                      src={game.cover}
-                      alt={`Cover di ${game.title}`}
-                      fill
-                      className="object-cover"
-                      priority
+                <CardContent className="flex p-0" style={{ height: "460px" }}>
+                  {/* Left 3/4 — YouTube video filling full height */}
+                  <div className="w-3/4 h-full flex-shrink-0 bg-black">
+                    <iframe
+                      src={getYouTubeEmbedUrl(game.video)}
+                      title={`Trailer di ${game.title}`}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      className="w-full h-full"
+                      style={{ border: "none", display: "block" }}
                     />
                   </div>
 
                   {/* Right 1/4 — details panel */}
-                  <div className="relative w-1/4 flex flex-col bg-zinc-900 border-l border-zinc-800">
-                    {/* Thumbnail overlapping the main image */}
-                    <div
-                      className="absolute -left-20 top-6 w-[160px] aspect-video rounded-md overflow-hidden border-2 border-zinc-700 shadow-2xl z-10"
-                    >
+                  <div className="w-1/4 flex flex-col bg-zinc-900 border-l border-zinc-800 overflow-hidden">
+                    {/* Thumbnail centrata nel pannello */}
+                    <div className="relative w-full aspect-video flex-shrink-0">
                       <Image
                         src={game.images[0]?.image || game.cover}
                         alt="Miniatura galleria"
@@ -63,10 +77,10 @@ export function BigGameCarousel({ params }: Props) {
                       />
                     </div>
 
-                    {/* Text content pushed down to leave room for the thumbnail */}
-                    <div className="flex flex-col flex-1 justify-between p-5 pt-28">
-                      <div className="space-y-3">
-                        <h3 className="text-xl font-bold leading-snug line-clamp-2">
+                    {/* Testo sotto la thumbnail */}
+                    <div className="flex flex-col flex-1 justify-between p-4 overflow-hidden">
+                      <div className="space-y-2 overflow-hidden">
+                        <h3 className="text-lg font-bold leading-snug line-clamp-2">
                           {game.title}
                         </h3>
 
@@ -86,7 +100,7 @@ export function BigGameCarousel({ params }: Props) {
                         </p>
                       </div>
 
-                      <div className="flex flex-col gap-1 mt-4 pt-4 border-t border-zinc-800">
+                      <div className="flex flex-col gap-1 pt-3 border-t border-zinc-800">
                         <span className="text-xs text-zinc-500">
                           Rilascio:{" "}
                           {new Date(game.release_date).toLocaleDateString(
