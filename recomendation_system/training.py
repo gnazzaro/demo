@@ -40,7 +40,7 @@ class RecomendationSystemTraining:
         )
 
         tags_per_games = Game.objects.values("id", "tag_list")
-        all_tags = Tag.objects.values_list("name", flat=True)
+        all_tags = Tag.objects.values_list("name", flat=True).order_by("name")
         total_tags = len(all_tags)
         tags_dataframe = pd.DataFrame(list(tags_per_games))
         tags_per_game_dataframe = tags_dataframe.groupby("id")["tag_list"].apply(list)
