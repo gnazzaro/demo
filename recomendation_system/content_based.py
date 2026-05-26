@@ -4,17 +4,7 @@ from cart.models import Library
 
 
 def content_based_similarity(target_game: Game, user):
-    # Evaluate as a plain list so it is reusable without re-hitting the DB.
     all_tags = list(Tag.objects.values_list("name", flat=True).order_by("name"))
-    all_tags_to_index = {tag: idx for idx, tag in enumerate(all_tags)}
-
-    # Bug fix 1: tag_list.all() returns Tag *objects*, not strings.
-    # Extracting .name from each Tag via a set gives O(1) string lookup and
-    # correctly uses the prefetch cache when prefetch_related is active.
-    target_tag_names = {t.name for t in target_game.tag_list.all()}
-    target_tags = [1 if tag in target_tag_names else 0 for tag in all_tags]
-
-    target_tags_tensor = torch.tensor(target_tags, dtype=torch.float32)
 
     not_owned_games = (
         Game.objects.distinct()
@@ -23,39 +13,53 @@ def content_based_similarity(target_game: Game, user):
     )
 
     if user.is_authenticated:
-        # Bug fix 2: Library.objects.filter(...) returns Library instances, not
-        # game PKs. Passing that queryset to id__in compared Game.id against
-        # Library.id, so the exclusion never worked.  We need the FK values.
         owned_game_ids = Library.objects.filter(user=user).values_list(
             "game_id", flat=True
         )
         not_owned_games = not_owned_games.exclude(id__in=owned_game_ids)
 
-    # Materialise the queryset once so index-based access later is consistent.
     not_owned_games = list(not_owned_games)
 
-    all_tags_per_game = []
-
-    for game in not_owned_games:
-        # Bug fix 3: same string-vs-object mismatch as above.
-        # Building a set per game reuses the prefetch cache and avoids an O(n)
-        # linear scan of the queryset for every tag.
-        game_tag_names = {t.name for t in game.tag_list.all()}
-        game_tags = [
-            1 if all_tags[idx] in game_tag_names else 0
-            for idx in range(len(all_tags))
-        ]
-        all_tags_per_game.append(game_tags)
-
-    if not all_tags_per_game:
+    if not not_owned_games:
         return []
+
+    # Build binary tag vectors for every candidate game.
+    all_tags_per_game = []
+    for game in not_owned_games:
+        game_tag_names = {t.name for t in game.tag_list.all()}
+        all_tags_per_game.append(
+            [1 if tag in game_tag_names else 0 for tag in all_tags]
+        )
 
     all_tags_per_game_tensor = torch.tensor(all_tags_per_game, dtype=torch.float32)
 
-    product = torch.mv(all_tags_per_game_tensor, target_tags_tensor)
+    target_tag_names = {t.name for t in target_game.tag_list.all()}
+    target_tags_tensor = torch.tensor(
+        [1 if tag in target_tag_names else 0 for tag in all_tags],
+        dtype=torch.float32,
+    )
 
-    norm_target = torch.norm(target_tags_tensor)
-    norm_games = torch.norm(all_tags_per_game_tensor, dim=1)
+    # IDF weighting — rare tags are more discriminative than common ones.
+    #
+    # Without this, a tag like "action" that appears in 80 % of the catalog
+    # contributes as much to cosine similarity as a tag like "soulslike" that
+    # appears in 2 % of games.  IDF down-weights frequent tags and up-weights
+    # rare, specific ones, making the similarity score far more selective.
+    #
+    # Formula: idf(t) = log(N / (df(t) + 1))  clamped to 0 so tags present in
+    # every candidate game contribute nothing rather than a tiny negative value.
+    n = float(len(not_owned_games))
+    df = all_tags_per_game_tensor.sum(dim=0)           # how many games have each tag
+    idf = torch.clamp(torch.log(torch.tensor(n) / (df + 1.0)), min=0.0)
+
+    # Apply IDF weights to both vectors before computing cosine similarity.
+    weighted_target = target_tags_tensor * idf
+    weighted_games = all_tags_per_game_tensor * idf.unsqueeze(0)
+
+    product = torch.mv(weighted_games, weighted_target)
+
+    norm_target = torch.norm(weighted_target)
+    norm_games = torch.norm(weighted_games, dim=1)
     norm = norm_target * norm_games
 
     cosine_similarities = product / (norm + 1e-8)
@@ -63,5 +67,4 @@ def content_based_similarity(target_game: Game, user):
     top_k = min(10, len(not_owned_games))
     values, indices = torch.topk(cosine_similarities, top_k)
 
-    most_similar_games = [not_owned_games[idx.item()] for idx in indices]
-    return most_similar_games
+    return [not_owned_games[idx.item()] for idx in indices]
