@@ -153,6 +153,17 @@ class RecomendationSystemTraining:
         num_games = len(dataframe["game"].unique())
         self.model = VgshopRCNeuralModel(num_users, num_games, total_tags)
 
+        # Store data needed for inference at recommendation time
+        self.total_tags = total_tags
+        # unique game categorical codes present in the training set
+        self.all_game_codes = sorted(dataframe["game"].unique().tolist())
+        # mapping: game_code -> tag tensor (one per unique game, not per sample)
+        self._game_code_to_tags = {}
+        for _, row in dataframe.drop_duplicates(subset="game").iterrows():
+            self._game_code_to_tags[int(row["game"])] = torch.tensor(
+                row["tag_list"], dtype=torch.float32
+            )
+
         # BCELoss is more natural for a [0,1] regression target produced by Sigmoid.
         # It penalizes confident wrong predictions much harder than MSE does.
         self.loss_function = torch.nn.BCELoss()
@@ -279,6 +290,39 @@ class RecomendationSystemTraining:
             print("Restored best model weights.")
 
         print("\nAddestramento completato!")
+
+    def get_top_k_for_user(self, user_code: int, top_k: int = 10, exclude_game_codes: list = None):
+        """
+        Restituisce i top_k giochi raccomandati per un utente.
+
+        Nota: il Sigmoid del modello produce uno score CONTINUO in (0, 1).
+        BCELoss (usata solo nel training) non rende l'output binario — è
+        semplicemente la funzione di costo più adatta a target normalizzati in [0,1].
+        Lo score 0.92 significa "molto probabile che interessi", 0.1 "poco probabile".
+
+        Parametri
+        ----------
+        user_code           : codice categorico dell'utente (da dataframe["user"])
+        top_k               : quanti giochi restituire
+        exclude_game_codes  : lista di codici giochi da escludere (es. già in libreria)
+
+        Ritorna
+        -------
+        Lista di (game_code, score) ordinata per score decrescente.
+        """
+        candidates = self.all_game_codes
+        if exclude_game_codes:
+            exclude_set = set(exclude_game_codes)
+            candidates = [g for g in candidates if g not in exclude_set]
+
+        tags_tensor = torch.stack([self._game_code_to_tags[g] for g in candidates])
+
+        return self.model.recommend(
+            user_id=user_code,
+            candidate_game_ids=candidates,
+            tags_tensor=tags_tensor,
+            top_k=top_k,
+        )
 
     def save_model(self):
         saved_models_dir = "saved_models"
