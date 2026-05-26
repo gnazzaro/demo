@@ -40,7 +40,8 @@ class RecomendationSystemTraining:
         )
 
         tags_per_games = Game.objects.values("id", "tag_list")
-        all_tags = Tag.objects.values_list("name", flat=True).order_by("name")
+        self.all_tags = Tag.objects.values_list("name", flat=True).order_by("name")
+        all_tags = self.all_tags
         total_tags = len(all_tags)
         tags_dataframe = pd.DataFrame(list(tags_per_games))
         tags_per_game_dataframe = tags_dataframe.groupby("id")["tag_list"].apply(list)
@@ -124,8 +125,20 @@ class RecomendationSystemTraining:
         print("Done !\n")
 
         dataframe = dataframe.sample(frac=1).reset_index(drop=True)
-        dataframe["user"] = dataframe["user"].astype("category").cat.codes
-        dataframe["game"] = dataframe["game"].astype("category").cat.codes
+
+        # BUG 7 FIX: build original_id→code mappings BEFORE discarding the categories.
+        # .astype("category").cat.codes returns plain integers — calling .cat.codes
+        # again on that would raise AttributeError. Use cat.categories instead.
+        user_cat = dataframe["user"].astype("category")
+        self.user_to_code = {orig: code for code, orig in enumerate(user_cat.cat.categories)}
+        dataframe["user"] = user_cat.cat.codes
+
+        game_cat = dataframe["game"].astype("category")
+        self.game_to_code = {orig: code for code, orig in enumerate(game_cat.cat.categories)}
+        dataframe["game"] = game_cat.cat.codes
+
+        # Keep a copy for save_model (needed to build the per-game tag map)
+        self._dataframe_snapshot = dataframe.copy()
 
         dataframe["in_library"] = dataframe["in_library"].fillna(0).astype(int)
         dataframe["stars"] = dataframe["stars"].fillna(0).astype(float)
@@ -325,11 +338,32 @@ class RecomendationSystemTraining:
         )
 
     def save_model(self):
-        saved_models_dir = "saved_models"
+        saved_models_dir = "recomendation_system/saved_models"
         os.makedirs(saved_models_dir, exist_ok=True)
         path = os.path.join(saved_models_dir, "vgshop_model_trained.pt")
-        torch.save(self.model, path)
-        print(f"Modello salvato in: {path}")
+
+        # Build game_code → tag tensor map so the service can score
+        # all candidate games without hitting the DB again at inference time.
+        game_code_to_tags = {}
+        for _, row in self._dataframe_snapshot.drop_duplicates(subset="game").iterrows():
+            game_code_to_tags[int(row["game"])] = torch.tensor(
+                row["tag_list"], dtype=torch.float32
+            )
+
+        # BUG 6 FIX: save state_dict(), not self.model.
+        # load_state_dict() expects an OrderedDict; saving the full model object
+        # would cause a type error in the service's load_state_dict() call.
+        checkpoint = {
+            "model": self.model.state_dict(),
+            "user_to_code": self.user_to_code,
+            "game_to_code": self.game_to_code,
+            "total_tags": self.total_tags,
+            "all_tags": list(self.all_tags),
+            "_game_code_to_tags": game_code_to_tags,
+        }
+
+        torch.save(checkpoint, path)
+        print(f"Modello completo salvato in: {path}")
 
     def start_training_session(self):
         self._train()
