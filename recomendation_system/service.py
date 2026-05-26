@@ -9,21 +9,25 @@ class RecomendationSystemService:
     MODEL_FILE = MODEL_DIR / "vgshop_model_trained.pt"
 
     def __init__(self):
-        # BUG 1 FIX: MODEL_DIR è la cartella, torch.load vuole il FILE .pt
         if not os.path.exists(self.MODEL_FILE):
-            raise FileNotFoundError("Modello non trovato, esegui il comando train !")
+            raise FileNotFoundError(
+                "Modello non trovato. Esegui prima il comando di training."
+            )
 
+        # weights_only=False è necessario perché i checkpoint salvati con versioni
+        # precedenti del training contengono tipi non-tensor (QuerySet, dizionari).
+        # Usare solo con file prodotti dal proprio training — non con file di terzi.
         complete_model = torch.load(self.MODEL_FILE, weights_only=False)
+
         self.map_user_code = complete_model["user_to_code"]
         self.map_game_code = complete_model["game_to_code"]
         self.total_tags = complete_model["total_tags"]
         self.all_tags = complete_model["all_tags"]
+        self._game_code_to_tags = complete_model.get("_game_code_to_tags", {})
 
         self.model = VgshopRCNeuralModel(
             len(self.map_user_code), len(self.map_game_code), self.total_tags
         )
-        # BUG 6 FIX (lato save_model): il checkpoint ora salva state_dict(),
-        # quindi qui load_state_dict funziona correttamente.
         self.model.load_state_dict(complete_model["model"])
         self.model.eval()
 
@@ -33,19 +37,12 @@ class RecomendationSystemService:
         user_id = self.map_user_code.get(user, None)
         game_id = self.map_game_code.get(game, None)
 
-        # BUG 4 FIX: "not 0" è True in Python → l'utente/gioco con codice 0
-        # restituiva sempre None. Usare "is None" è l'unico controllo corretto.
         if user_id is None or game_id is None:
             return None
 
         tag_list = [1 if tag in game_tags else 0 for tag in self.all_tags]
-
-        # BUG 2+3 FIX: usare user_id e game_id (codici mappati), NON user e game
-        #              che sono gli ID originali del DB — andrebbero fuori range.
         user_tensor = torch.tensor([user_id], dtype=torch.long)
         game_tensor = torch.tensor([game_id], dtype=torch.long)
-
-        # BUG 5 FIX: i tag devono essere float32 — i layer lineari si aspettano float.
         tag_tensor = torch.tensor([tag_list], dtype=torch.float32)
 
         with torch.no_grad():
@@ -72,29 +69,23 @@ class RecomendationSystemService:
             return []
 
         exclude_set = set(exclude_games or [])
-
         candidate_original_ids = [
-            orig for orig in self.map_game_code
-            if orig not in exclude_set
+            orig for orig in self.map_game_code if orig not in exclude_set
         ]
         candidate_codes = [self.map_game_code[orig] for orig in candidate_original_ids]
-
-        # Recupera i tag dei giochi candidati dall'all_tags salvato
-        # (richiede che il checkpoint includa anche _game_code_to_tags)
-        game_tags_map = self.map_game_code.get("_game_code_to_tags", None)
-
         num_candidates = len(candidate_codes)
+
         user_tensor = torch.tensor([user_id] * num_candidates, dtype=torch.long)
         games_tensor = torch.tensor(candidate_codes, dtype=torch.long)
 
-        with torch.no_grad():
-            # Se i tag per gioco sono stati salvati nel checkpoint usali,
-            # altrimenti usa zero-vector (tags non disponibili a inferenza)
-            if game_tags_map is not None:
-                tags_tensor = torch.stack([game_tags_map[c] for c in candidate_codes])
-            else:
-                tags_tensor = torch.zeros(num_candidates, self.total_tags)
+        if self._game_code_to_tags:
+            tags_tensor = torch.stack(
+                [self._game_code_to_tags[c] for c in candidate_codes]
+            )
+        else:
+            tags_tensor = torch.zeros(num_candidates, self.total_tags)
 
+        with torch.no_grad():
             scores = self.model(user_tensor, games_tensor, tags_tensor).squeeze()
 
         top_k = min(top_k, num_candidates)
@@ -104,3 +95,16 @@ class RecomendationSystemService:
             (candidate_original_ids[idx.item()], round(top_scores[rank].item(), 4))
             for rank, idx in enumerate(top_indices)
         ]
+
+
+# Singleton con lazy loading: il modello viene caricato una volta sola al primo
+# utilizzo, non all'import. In questo modo Django si avvia normalmente anche se
+# il modello non è ancora stato addestrato.
+_service_instance: RecomendationSystemService | None = None
+
+
+def get_recomendation_service() -> RecomendationSystemService:
+    global _service_instance
+    if _service_instance is None:
+        _service_instance = RecomendationSystemService()
+    return _service_instance

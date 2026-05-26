@@ -353,13 +353,15 @@ class RecomendationSystemTraining:
         # BUG 6 FIX: save state_dict(), not self.model.
         # load_state_dict() expects an OrderedDict; saving the full model object
         # would cause a type error in the service's load_state_dict() call.
+        # Tutti i valori devono essere tipi Python nativi o tensori — mai QuerySet
+        # o oggetti Django, altrimenti torch.load(weights_only=True) fallisce.
         checkpoint = {
-            "model": self.model.state_dict(),
-            "user_to_code": self.user_to_code,
-            "game_to_code": self.game_to_code,
-            "total_tags": self.total_tags,
-            "all_tags": list(self.all_tags),
-            "_game_code_to_tags": game_code_to_tags,
+            "model": self.model.state_dict(),            # OrderedDict di tensori
+            "user_to_code": {int(k): int(v) for k, v in self.user_to_code.items()},
+            "game_to_code": {int(k): int(v) for k, v in self.game_to_code.items()},
+            "total_tags": int(self.total_tags),
+            "all_tags": list(self.all_tags),             # lista di stringhe, non QuerySet
+            "_game_code_to_tags": game_code_to_tags,     # dict di tensori float32
         }
 
         torch.save(checkpoint, path)
