@@ -14,9 +14,6 @@ class RecomendationSystemService:
                 "Modello non trovato. Esegui prima il comando di training."
             )
 
-        # weights_only=False è necessario perché i checkpoint salvati con versioni
-        # precedenti del training contengono tipi non-tensor (QuerySet, dizionari).
-        # Usare solo con file prodotti dal proprio training — non con file di terzi.
         complete_model = torch.load(self.MODEL_FILE, weights_only=False)
 
         self.map_user_code = complete_model["user_to_code"]
@@ -33,11 +30,47 @@ class RecomendationSystemService:
 
         print("Modello pronto !")
 
+    @staticmethod
+    def _extract_pk(obj):
+        """
+        Normalizza user/game ad una chiave confrontabile con quelle del dizionario.
+
+        Accetta:
+        - istanze di modelli Django  → restituisce obj.pk
+        - interi, UUID, stringhe     → restituisce obj così com'è
+
+        Questo risolve il caso comune in cui il chiamante passa request.user
+        (un'istanza User) invece del suo pk — il dict ha chiavi pk, non istanze.
+        """
+        if hasattr(obj, "pk"):
+            return obj.pk
+        return obj
+
     def predict_score(self, user, game, game_tags):
-        user_id = self.map_user_code.get(user, None)
-        game_id = self.map_game_code.get(game, None)
+        user_pk = self._extract_pk(user)
+        game_pk = self._extract_pk(game)
+
+        user_id = self.map_user_code.get(user_pk, None)
+        game_id = self.map_game_code.get(game_pk, None)
 
         if user_id is None or game_id is None:
+            # Log di debug per capire subito il tipo ricevuto vs quello atteso
+            if user_id is None:
+                sample_key = next(iter(self.map_user_code), None)
+                print(
+                    f"[RecomendationService] user non trovato: "
+                    f"ricevuto {user_pk!r} (tipo {type(user_pk).__name__}), "
+                    f"chiavi del dict di tipo {type(sample_key).__name__} "
+                    f"(esempio: {sample_key!r})"
+                )
+            if game_id is None:
+                sample_key = next(iter(self.map_game_code), None)
+                print(
+                    f"[RecomendationService] game non trovato: "
+                    f"ricevuto {game_pk!r} (tipo {type(game_pk).__name__}), "
+                    f"chiavi del dict di tipo {type(sample_key).__name__} "
+                    f"(esempio: {sample_key!r})"
+                )
             return None
 
         tag_list = [1 if tag in game_tags else 0 for tag in self.all_tags]
@@ -56,23 +89,28 @@ class RecomendationSystemService:
 
         Parametri
         ----------
-        user          : ID originale dell'utente (come nel DB)
+        user          : istanza User Django O pk diretto (int/UUID)
         top_k         : numero di raccomandazioni
-        exclude_games : ID originali dei giochi da escludere (es. già in libreria)
+        exclude_games : pk dei giochi da escludere (istanze Django o pk grezzi)
 
         Ritorna
         -------
-        Lista di (game_original_id, score) ordinata per score decrescente.
+        Lista di (game_pk, score) ordinata per score decrescente.
         """
-        user_id = self.map_user_code.get(user, None)
+        user_pk = self._extract_pk(user)
+        user_id = self.map_user_code.get(user_pk, None)
         if user_id is None:
+            sample_key = next(iter(self.map_user_code), None)
+            print(
+                f"[RecomendationService] recommend: user non trovato: "
+                f"ricevuto {user_pk!r} ({type(user_pk).__name__}), "
+                f"chiavi del dict di tipo {type(sample_key).__name__}"
+            )
             return []
 
-        exclude_set = set(exclude_games or [])
-        candidate_original_ids = [
-            orig for orig in self.map_game_code if orig not in exclude_set
-        ]
-        candidate_codes = [self.map_game_code[orig] for orig in candidate_original_ids]
+        exclude_set = {self._extract_pk(g) for g in (exclude_games or [])}
+        candidate_pks = [pk for pk in self.map_game_code if pk not in exclude_set]
+        candidate_codes = [self.map_game_code[pk] for pk in candidate_pks]
         num_candidates = len(candidate_codes)
 
         user_tensor = torch.tensor([user_id] * num_candidates, dtype=torch.long)
@@ -92,14 +130,11 @@ class RecomendationSystemService:
         top_scores, top_indices = torch.topk(scores, k=top_k)
 
         return [
-            (candidate_original_ids[idx.item()], round(top_scores[rank].item(), 4))
+            (candidate_pks[idx.item()], round(top_scores[rank].item(), 4))
             for rank, idx in enumerate(top_indices)
         ]
 
 
-# Singleton con lazy loading: il modello viene caricato una volta sola al primo
-# utilizzo, non all'import. In questo modo Django si avvia normalmente anche se
-# il modello non è ancora stato addestrato.
 _service_instance: RecomendationSystemService | None = None
 
 
